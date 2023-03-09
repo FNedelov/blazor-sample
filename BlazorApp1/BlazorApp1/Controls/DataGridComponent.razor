@@ -1,0 +1,216 @@
+﻿@using BlazorApp1.Configuration;
+@typeparam TItem
+
+
+
+<table class="table">
+    <thead>
+        @*<tr>
+            @if (Columns == null || Columns.Count <= 0)
+            {
+
+            }
+            else
+            {
+                foreach (var column in Columns)
+                {
+                    <th>
+                        <input class="form-control" type="text" placeholder="Filter...">
+                    </th>
+                }
+            }
+        </tr>*@
+        <tr>
+            @if (Columns == null || Columns.Count <= 0)
+            {
+
+            }
+            else
+            {
+                foreach (var column in Columns)
+                {
+                    <th class="prevent-select" @onclick="@(() => SortData(column))">
+                        @column.Caption
+                        <span style="float:right" class="@SortClass(column)"></span>
+                    </th>
+                }
+            }
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var item in DataItems.Skip(Paging.NumOfItemsToSkip(CurrentPageNumber))
+        .Take(Paging.NumOfItemsToTake(DataItems.Count)))
+        {
+            <tr>
+                @foreach (var column in Columns)
+                {
+                    @if (!string.IsNullOrWhiteSpace(column.Format) && column.DataType != DataType.NotSet)
+                    {
+                        string value = string.Empty;
+                        switch (column.DataType)
+                        {
+                            case DataType.Date:
+                            case DataType.DateTime:
+                                value = DateTime.Parse(typeof(TItem).GetProperty(column.DataField).GetValue(item).ToString()).ToString(column.Format);
+                                break;
+                            case DataType.Boolean:
+                                value = bool.Parse(typeof(TItem).GetProperty(column.DataField).GetValue(item).ToString()).ToString();
+                                break;
+                            case DataType.Currency:
+                                value = Math.Round(double.Parse(typeof(TItem).GetProperty(column.DataField)?.GetValue(item)?.ToString()), 2).ToString(column.Format);
+                                break;
+                            default:
+                                break;
+
+                        }
+
+                        <td class="prevent-select" align="@column.Alignment.ToString().ToLower()">@value</td>
+                    }
+                    else
+                    {
+                        <td class="prevent-select" align="@column.Alignment.ToString().ToLower()">@typeof(TItem).GetProperty(column.DataField)?.GetValue(item)</td>
+                    }
+                }
+                <button class="prevent-select" @onclick="(() => Clicked(item))">Btn</button>
+            </tr>
+        }
+    </tbody>
+</table>
+<div class="level">
+    <div class="level-right">
+        <div class="level-item">
+            @if (Paging != null && Paging.Enabled)
+            {
+                @if (Paging.CustomPager)
+                {
+                    @CustomPager
+                }
+                else
+                {
+                    <span class="paging-button prevent-select" @onclick="GoToPrevPage"><b>&lt; Previous</b></span>
+                    @*Revert to edge cases!!!*@
+                    <span class="paging-info prevent-select">
+                        &nbsp;&nbsp;Page
+                        <input type="number" max="@MaxPageNumber" min="1" @bind-value="@CurrentPageNumber" oninput="validity.valid||(value='');" />
+                        of @Paging.MaxPageNumber(DataItems.Count)&nbsp;&nbsp;
+                    </span>
+                    <span class="paging-button prevent-select" @onclick="GoToNextPage"><b>Next &gt;</b></span>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public List<TItem> DataItems { get; set; }
+
+    [Parameter]
+    public List<ColumnDefinition> Columns { get; set; }
+
+    [Parameter]
+    public PagingConfig Paging { get; set; }
+
+    [Parameter]
+    public int CurrentPageNumber { get; set; } = 1;
+
+    [Parameter]
+    public RenderFragment CustomPager { get; set; }
+
+    public int MaxPageNumber { get => Paging.MaxPageNumber(DataItems.Count); }
+
+    private List<TItem> _fullItems;
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+        //_fullItems = DataItems;
+    }
+
+    private async Task Clicked(TItem item)
+    {
+        //DataItems = _fullItems;
+        var row = item;
+        var name = typeof(TItem)?.GetProperty("Name")?.GetValue(item);
+    }
+
+    protected override void OnParametersSet()
+    {
+        base.OnParametersSet();
+        SortData();
+    }
+
+    public void GoToPrevPage()
+    {
+        CurrentPageNumber = Paging.PrevPageNumber(CurrentPageNumber);
+    }
+
+    public void GoToNextPage()
+    {
+        CurrentPageNumber = Paging.NextPageNumber(CurrentPageNumber, DataItems.Count);
+    }
+
+    private string SortClass(ColumnDefinition column)
+    {
+        if (column.SortDirection != SortDirection.NotSet)
+        {
+            return $"sort {column.SortDirection.ToString().ToLower()}";
+        }
+        return "no-sort";
+    }
+
+    private void SortData(ColumnDefinition sortByColumn = null)
+    {
+        bool initial = (sortByColumn == null);
+
+        if (sortByColumn == null)
+        {
+            sortByColumn = Columns.FirstOrDefault(x => x.SortDirection != SortDirection.NotSet);
+            if (sortByColumn == null) return;
+        }
+
+        foreach (var column in Columns)
+        {
+            if (column.DataField != sortByColumn.DataField)
+            {
+                column.SortDirection = SortDirection.NotSet;
+            }
+        }
+
+        if (!initial)
+        {
+            switch (sortByColumn.SortDirection)
+            {
+                case SortDirection.NotSet:
+                    sortByColumn.SortDirection = SortDirection.Asc;
+                    break;
+                case SortDirection.Asc:
+                    sortByColumn.SortDirection = SortDirection.Desc;
+                    break;
+                case SortDirection.Desc:
+                    sortByColumn.SortDirection = SortDirection.Asc;
+                    break;
+                default:
+                    sortByColumn.SortDirection = SortDirection.Asc;
+                    break;
+            }
+        }
+
+        if (sortByColumn.SortDirection == SortDirection.Asc)
+        {
+            DataItems.Sort((x, y) => typeof(TItem).GetProperty(sortByColumn.DataField).GetValue(x).ToString()
+                          .CompareTo(typeof(TItem).GetProperty(sortByColumn.DataField).GetValue(y).ToString()));
+
+
+#warning try to limit?? check if paging number changes. working, have a temp variable
+            //DataItems = DataItems.Take(3).ToList();
+        }
+        else
+        {
+            DataItems.Sort((x, y) => typeof(TItem).GetProperty(sortByColumn.DataField).GetValue(y).ToString()
+                          .CompareTo(typeof(TItem).GetProperty(sortByColumn.DataField).GetValue(x).ToString()));
+
+            //DataItems = DataItems.Take(3).ToList();
+        }
+    }
+}
